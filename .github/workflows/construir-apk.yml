@@ -33,7 +33,7 @@ jobs:
 
       - name: Instalar Buildozer sin Docker
         run: |
-          python3 -m venv "$RUNNER_TEMP/iraned-venv"
+          python3 -m venv --system-site-packages "$RUNNER_TEMP/iraned-venv"
           "$RUNNER_TEMP/iraned-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/iraned-venv/bin/python" -m pip install buildozer setuptools "cython==0.29.34"
           echo "$RUNNER_TEMP/iraned-venv/bin" >> "$GITHUB_PATH"
