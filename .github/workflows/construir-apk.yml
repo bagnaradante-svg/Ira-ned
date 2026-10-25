@@ -1,6 +1,8 @@
 name: Compilar IRA NED para Android
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
