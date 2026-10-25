@@ -14,10 +14,11 @@ android.minapi = 24
 android.ndk = 28c
 android.archs = arm64-v8a
 
-# Correccion publicada por los desarrolladores para el fallo
-# "cannot import name BuildDependencyInstallError" al compilar.
+# La revision de python-for-android incorpora la correccion oficial
+# del error de ruedas Android "not a supported wheel" (#3366).
+# Tambien conserva la solucion anterior para el entorno de pip (#3360).
 p4a.branch = develop
-p4a.commit = 0382d27de2f7315ed98e74884bafb30365decdee
+p4a.commit = 5865575d81d53617784428ee29f57be2716311ea
 
 # Solo responde dentro de la app. No requiere permiso directo de microfono,
 # acceso a archivos ni control de otras aplicaciones.
