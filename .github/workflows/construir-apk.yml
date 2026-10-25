@@ -1,0 +1,29 @@
+name: Compilar IRA NED para Android
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  crear-apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Crear APK de prueba
+        id: compilacion
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
+          workdir: .
+
+      - name: Guardar APK para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: IRA_NED_APK
+          path: ${{ steps.compilacion.outputs.filename }}
+          if-no-files-found: error
