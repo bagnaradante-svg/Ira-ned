@@ -10,22 +10,44 @@ permissions:
 
 jobs:
   crear-apk:
+    name: Fabricar APK de IRA NED
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
-      - name: Descargar proyecto
+      - name: Descargar el proyecto
         uses: actions/checkout@v4
 
-      - name: Crear APK de prueba
-        id: compilacion
-        uses: ArtemSBulgakov/buildozer-action@v1
-        with:
-          command: buildozer android debug
-          buildozer_version: stable
-          workdir: .
+      - name: Instalar dependencias de Buildozer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk python3-pip python3-venv \
+            autoconf automake autopoint gettext libtool libltdl-dev \
+            pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo6 cmake libffi-dev libssl-dev build-essential
+
+      - name: Preparar Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Instalar Buildozer sin Docker
+        run: |
+          python3 -m venv "$RUNNER_TEMP/iraned-venv"
+          "$RUNNER_TEMP/iraned-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/iraned-venv/bin/python" -m pip install buildozer setuptools "cython==0.29.34"
+          echo "$RUNNER_TEMP/iraned-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Compilar IRA NED para Android
+        env:
+          PYTHONFORANDROID_PREREQUISITES_INSTALL_INTERACTIVE: "0"
+        run: |
+          sed -i '/^android.ndk = /a android.accept_sdk_license = True' buildozer.spec
+          buildozer -v android debug
 
       - name: Guardar APK para descargar
         uses: actions/upload-artifact@v4
         with:
           name: IRA_NED_APK
-          path: ${{ steps.compilacion.outputs.filename }}
+          path: bin/*.apk
           if-no-files-found: error
