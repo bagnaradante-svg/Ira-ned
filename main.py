@@ -1,11 +1,13 @@
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 """IRA NED: asistente con chat y salida de voz experimental.
 Para Android con Kivy (proyecto de APK).
 Para dictar: tocar la caja de texto, microfono del teclado y tecla Enter.
-La voz hablada utiliza Android TextToSpeech si jnius y plyer estan disponibles.
+La voz hablada utiliza Android TextToSpeech si Android dispone de un motor de voz.
 NO usa el microfono directamente ni pide permisos sobre archivos del telefono.
 """
 import re
+import random
+import unicodedata
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -26,18 +28,118 @@ BOT = (0.07, 0.14, 0.26, 1)
 TU = (0.03, 0.29, 0.47, 1)
 
 
-def responder(mensaje):
-    """AQUI VA TU CEREBRO ORIGINAL: crea nuevas reglas con 'return'."""
-    texto = mensaje.strip().lower()
-    if texto in ("hola", "hola ira ned", "oye", "oye ira ned", "hola iraned"):
-        return "¡Hola! Soy IRA NED. ¿En qué puedo ayudarte?"
-    texto = texto.replace("más", "+").replace("mas", "+")
-    suma = re.search(r"\d+(?:\s*\+\s*\d+)+", texto)
+def responder(mensaje, memoria=None):
+    """Conversacion basica sin internet. Memoria solo durante esta sesion."""
+    memoria = memoria if memoria is not None else {}
+    texto = "".join(
+        letra for letra in unicodedata.normalize("NFD", mensaje.strip().casefold())
+        if unicodedata.category(letra) != "Mn"
+    )
+    texto = re.sub(r"\s+", " ", texto)
+    if not texto:
+        return "No te he escuchado bien. ¿Puedes repetirlo?"
+
+    # Antes que nada, responde con prudencia ante situaciones importantes.
+    alarma = ("me quiero morir", "quiero hacerme dano", "me voy a hacer dano",
+              "me estan haciendo dano", "estoy en peligro")
+    if any(frase in texto for frase in alarma):
+        return ("Eso es importante. Busca ahora a un adulto de confianza y cuentale "
+                "lo que ocurre. Si hay peligro inmediato, llama al 112.")
+
+    if texto in ("terminar juego", "salir del juego", "cancelar juego", "parar juego"):
+        memoria.pop("numero_secreto", None)
+        return "Juego terminado. ¿Quieres charlar de otra cosa?"
+
+    if "numero_secreto" in memoria:
+        numeros = re.findall(r"\d+", texto)
+        if numeros:
+            intento = int(numeros[0])
+            secreto = memoria["numero_secreto"]
+            if intento == secreto:
+                memoria.pop("numero_secreto", None)
+                return "¡Acertaste! ¡Buen trabajo! ¿Jugamos otra vez o charlamos?"
+            if 1 <= intento <= 20:
+                return "¡Prueba con uno más alto!" if intento < secreto else "¡Prueba con uno más bajo!"
+            return "Prueba con un número entre 1 y 20."
+        return "Estamos jugando. Dime un número del 1 al 20, o escribe 'terminar juego'."
+
+    if memoria.get("ofrecio_juego") and texto in ("si", "vale", "claro", "vamos", "ok", "sip"):
+        memoria.pop("ofrecio_juego", None)
+        memoria["numero_secreto"] = random.randint(1, 20)
+        return "¡Genial! He pensado un número entre 1 y 20. ¿Cuál crees que es?"
+    if memoria.get("ofrecio_juego") and texto in ("no", "ahora no", "mejor no"):
+        memoria.pop("ofrecio_juego", None)
+        return "Vale. ¿Prefieres que hablemos de ciencia, juegos o de tu día?"
+
+    suma_texto = re.sub(r"\bmas\b", "+", texto)
+    suma = re.search(r"\d+(?:\s*\+\s*\d+)+", suma_texto)
     if suma:
         numeros = re.findall(r"\d+", suma.group())
-        return "El resultado es " + str(sum(int(n) for n in numeros))
-    return "Todavía no entendí tu mensaje."
+        return "El resultado es " + str(sum(int(n) for n in numeros)) + "."
 
+    if any(frase in texto for frase in ("no tengo con quien jugar", "nadie me contesta",
+                                      "nadie me respondio", "nadie me respondio",
+                                      "mis amigos no contestan", "mis amigos no responden")):
+        memoria["ofrecio_juego"] = True
+        return ("Vaya, querías jugar y no pudiste hablar con tus amigos. "
+                "Quizá ahora están ocupados. ¿Jugamos aquí a adivinar un número mientras tanto?")
+
+    if any(frase in texto for frase in ("estoy triste", "me siento solo", "estoy solo",
+                                      "me siento mal", "estoy aburrido", "estoy aburrida")):
+        memoria["ofrecio_juego"] = True
+        return ("Gracias por contármelo. Si quieres, podemos jugar a algo sencillo. "
+                "También puede venirte bien hablar con alguien de confianza. ¿Jugamos?")
+
+    if (("adivina" in texto and "numero" in texto) or "quiero jugar" in texto
+            or "vamos a jugar" in texto or "juguemos" in texto):
+        memoria.pop("ofrecio_juego", None)
+        memoria["numero_secreto"] = random.randint(1, 20)
+        return "¡Vamos! He pensado un número entre 1 y 20. ¿Cuál crees que es?"
+
+    if re.search(r"\b(hola|buenas|hey|oye)\b", texto):
+        return random.choice((
+            "¡Hola! ¿Cómo va tu día? ¿Te apetece hablar o jugar?",
+            "¡Hola, creador! ¿Qué has hecho de interesante hoy?",
+        ))
+    if "como estas" in texto or "que tal estas" in texto:
+        return "Mis sistemas están funcionando. ¿Y tú qué tal estás hoy?"
+    if texto in ("bien", "muy bien", "genial"):
+        return "¡Qué bien! ¿Qué fue lo mejor de tu día?"
+    if texto in ("mal", "regular", "mas o menos"):
+        return "Vaya. ¿Quieres contarme qué ha pasado o prefieres jugar un poco?"
+
+    if "como te llamas" in texto or "quien eres" in texto:
+        return "Soy IRA NED, una inteligencia artificial que estás construyendo. ¡Un gusto hablar contigo!"
+    if "puedes hablar" in texto or "habla conmigo" in texto or "quiero conversar" in texto:
+        return "Claro. ¿Te gustaría hablar de Minecraft, ciencia o de cómo te fue hoy?"
+    if "eres una persona" in texto or "eres humano" in texto:
+        return "No, soy un programa. Puedo conversar contigo, pero no soy una persona."
+    if "que puedes hacer" in texto or "que sabes hacer" in texto:
+        return "Puedo saludarte, sumar, conversar de algunos temas y jugar a adivinar un número."
+
+    if "minecraft" in texto:
+        return random.choice((
+            "Minecraft tiene muchísimas posibilidades. ¿Prefieres construir o usar redstone?",
+            "¡Minecraft! ¿Qué invento te gustaría construir hoy?",
+        ))
+    if "redstone" in texto:
+        return "¡La redstone parece un circuito! ¿Estás haciendo una puerta, una máquina o algo más?"
+    if "cohete" in texto or "espacio" in texto or "planeta" in texto:
+        return "¡El espacio es fascinante! ¿Te interesan más los cohetes o los planetas?"
+    if "ciencia" in texto or "experimento" in texto:
+        return "¡Los experimentos son interesantes! ¿Qué te gustaría investigar?"
+    if "geometry dash" in texto:
+        return "¡Eso suena divertido! ¿Estás creando un nivel o intentando superar uno?"
+    if "gracias" in texto:
+        return "¡De nada! ¿De qué más te apetece hablar?"
+    if "adios" in texto or "hasta luego" in texto:
+        return "¡Hasta luego! Que tengas un buen día."
+
+    return random.choice((
+        "Todavía estoy aprendiendo a conversar. ¿Me cuentas un poco más?",
+        "No he entendido del todo eso. ¿Podrías decírmelo con otras palabras?",
+        "Interesante. ¿Te apetece contarme más o jugamos a adivinar un número?",
+    ))
 
 class Burbuja(Label):
     def __init__(self, color_fondo, **kwargs):
@@ -64,6 +166,7 @@ class IRA_NED_V6(App):
     def build(self):
         self.title = "IRA NED"
         self.voz_activa = True
+        self.memoria_ira = {}
         self.tts = None
         self.TTS = None
         self.Locale = None
@@ -122,7 +225,7 @@ class IRA_NED_V6(App):
         barra.add_widget(enviar)
         raiz.add_widget(barra)
 
-        Clock.schedule_once(lambda _dt: self.mostrar("IRA NED", "Sistema iniciado. Hola, creador."), 0)
+        Clock.schedule_once(lambda _dt: self.mostrar("IRA NED", "Hola, creador. ¿Hablamos o jugamos a adivinar un número?"), 0)
         # Se prepara la voz despues de abrir Kivy. Si no se puede, el chat sigue.
         Clock.schedule_once(lambda _dt: self.iniciar_voz(), 0.7)
         return raiz
@@ -158,7 +261,7 @@ class IRA_NED_V6(App):
 
     def contestar(self, mensaje):
         try:
-            respuesta = responder(mensaje)
+            respuesta = responder(mensaje, self.memoria_ira)
         except Exception:
             respuesta = "Ha ocurrido un error al responder."
         self.mostrar("IRA NED", respuesta)
@@ -176,7 +279,7 @@ class IRA_NED_V6(App):
         if not self.voz_activa:
             self.ayuda.text = "Activa VOZ ON antes de probar."
             return
-        self.decir("Hola, creador. Soy IRA NED. Ahora estoy hablando.")
+        self.decir("¡Hola, creador! Soy IRA NED. Me alegra poder hablar contigo.")
 
     def iniciar_voz(self):
         """Inicia motor nativo de Android y espera su confirmacion."""
@@ -220,7 +323,11 @@ class IRA_NED_V6(App):
                 self.ayuda.text = 'Falta voz en español: Ajustes > Texto a voz.'
                 self.error_voz = f'Idioma={idioma}'
                 return
-            self.tts.setSpeechRate(0.95)
+            self.tts.setSpeechRate(0.89)
+            try:
+                self.tts.setPitch(1.06)
+            except Exception:
+                pass
             self.voz_lista = True
             self.ayuda.text = 'Voz lista. Pulsa PROBAR VOZ.'
         except Exception as exc:
@@ -237,7 +344,7 @@ class IRA_NED_V6(App):
         if not self.voz_activa:
             return
         if not self.voz_lista or self.tts is None:
-            self.ayuda.text = 'Voz sin iniciar. Revisa la consola de Pydroid.'
+            self.ayuda.text = 'Voz no lista. Revisa Texto a voz en Ajustes.'
             return
 
         try:
@@ -268,7 +375,7 @@ class IRA_NED_V6(App):
                 metodo = 'alternativo (HashMap)'
             except Exception as antiguo_error:
                 self.error_voz = repr(antiguo_error)
-                self.ayuda.text = 'No se pudo enviar la voz. Mira el error en Pydroid.'
+                self.ayuda.text = 'No se pudo usar la voz. Revisa Ajustes de Android.'
                 print('IRA NED: fallo voz moderna:', repr(moderno_error))
                 print('IRA NED: fallo voz alternativa:', repr(antiguo_error))
                 return
