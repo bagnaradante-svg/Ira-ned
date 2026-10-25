@@ -1,4 +1,4 @@
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 """IRA NED: asistente con chat y salida de voz experimental.
 Para Android con Kivy (proyecto de APK).
 Para dictar: tocar la caja de texto, microfono del teclado y tecla Enter.
@@ -8,6 +8,12 @@ NO usa el microfono directamente ni pide permisos sobre archivos del telefono.
 import re
 import random
 import unicodedata
+import math
+import wave
+import struct
+import tempfile
+import os
+from kivy.core.audio import SoundLoader
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
@@ -141,6 +147,72 @@ def responder(mensaje, memoria=None):
         "Interesante. ¿Te apetece contarme más o jugamos a adivinar un número?",
     ))
 
+class Bateria:
+    """Bateria sintetizada sin archivos externos ni acceso al microfono."""
+    def __init__(self):
+        self.sonidos = {}
+        self.evento = None
+        self.paso = 0
+
+    def preparar(self):
+        if self.sonidos:
+            return
+        tasa = 22050
+        for nombre in ("bombo", "caja", "platillo"):
+            muestras = []
+            rng = random.Random(42)
+            duracion = 0.24 if nombre == "bombo" else 0.13
+            for i in range(int(tasa * duracion)):
+                t = i / tasa
+                ruido = rng.uniform(-1, 1)
+                if nombre == "bombo":
+                    frecuencia = 65 + 100 * math.exp(-t * 30)
+                    valor = math.sin(2 * math.pi * frecuencia * t) * math.exp(-t * 23)
+                elif nombre == "caja":
+                    valor = (0.7 * ruido + 0.3 * math.sin(2 * math.pi * 180 * t)) * math.exp(-t * 30)
+                else:
+                    valor = ruido * math.exp(-t * 48) * (1 if i % 2 else -1)
+                muestras.append(struct.pack("<h", int(max(-1, min(1, valor * 0.55)) * 32767)))
+            ruta = os.path.join(tempfile.gettempdir(), "ira_ned_" + nombre + ".wav")
+            with wave.open(ruta, "wb") as archivo:
+                archivo.setnchannels(1)
+                archivo.setsampwidth(2)
+                archivo.setframerate(tasa)
+                archivo.writeframes(b"".join(muestras))
+            sonido = SoundLoader.load(ruta)
+            if sonido is None:
+                raise RuntimeError("No se pudo cargar el sonido " + nombre)
+            self.sonidos[nombre] = sonido
+
+    def tocar(self, _dt):
+        paso = self.paso % 8
+        nombres = ["platillo"]
+        if paso in (0, 4):
+            nombres.append("bombo")
+        if paso in (2, 6):
+            nombres.append("caja")
+        for nombre in nombres:
+            sonido = self.sonidos[nombre]
+            sonido.stop()
+            sonido.play()
+        self.paso += 1
+
+    def iniciar(self):
+        if self.evento is not None:
+            return
+        self.preparar()
+        self.paso = 0
+        self.tocar(0)
+        self.evento = Clock.schedule_interval(self.tocar, 0.3)
+
+    def parar(self):
+        if self.evento is not None:
+            self.evento.cancel()
+            self.evento = None
+        for sonido in self.sonidos.values():
+            sonido.stop()
+
+
 class Burbuja(Label):
     def __init__(self, color_fondo, **kwargs):
         super().__init__(size_hint=(0.84, None), height=dp(53), font_size=sp(16),
@@ -167,6 +239,7 @@ class IRA_NED_V6(App):
         self.title = "IRA NED"
         self.voz_activa = True
         self.memoria_ira = {}
+        self.bateria = Bateria()
         self.tts = None
         self.TTS = None
         self.Locale = None
@@ -252,9 +325,23 @@ class IRA_NED_V6(App):
         self.entrada.text = ""
         self.entrada.focus = False
         self.mostrar("TÚ", mensaje)
+        orden = mensaje.casefold().strip()
+        if orden == "canta":
+            try:
+                self.detener_voz()
+                self.bateria.iniciar()
+                self.mostrar("IRA NED", "¡Bateria activada! Canta encima del ritmo. Escribe para cuando termines.")
+            except Exception as exc:
+                self.mostrar("IRA NED", "No pude iniciar la bateria: " + str(exc)[:100])
+            return
+        if orden == "para":
+            self.bateria.parar()
+            self.mostrar("IRA NED", "Bateria detenida. ¡Buen trabajo!")
+            return
         if mensaje.lower() == "emergencia":
             self.mostrar("IRA NED", "Protocolo 001 activado. Cerrando...")
             self.detener_voz()
+            self.bateria.parar()
             Clock.schedule_once(lambda _dt: self.stop(), 1)
         else:
             Clock.schedule_once(lambda _dt: self.contestar(mensaje), 0.5)
@@ -394,6 +481,7 @@ class IRA_NED_V6(App):
             pass
 
     def on_stop(self):
+        self.bateria.parar()
         try:
             if self.tts is not None:
                 self.tts.stop()
